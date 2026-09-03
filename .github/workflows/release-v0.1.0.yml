@@ -1,0 +1,40 @@
+name: Release v0.1.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v0.1.0.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tested source
+        uses: actions/checkout@v4
+        with:
+          ref: 3ca9627945f8f46d090b8fe04f5ba915c93f372a
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+      - name: Build
+        run: gradle clean build --stacktrace
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.1.0 \
+            build/libs/MiraBoosters-0.1.0.jar \
+            --target 3ca9627945f8f46d090b8fe04f5ba915c93f372a \
+            --title "MiraBoosters v0.1.0" \
+            --notes "Initial MiraBoosters release with timed global/personal multiplier channels, persistent state, stacking modes, native XP and mob-drop boosts, PlaceholderAPI and public ServicesManager API."
