@@ -263,7 +263,7 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
     private String formatDuration(long seconds) { if (seconds >= 86400) return (seconds / 86400) + "d"; if (seconds >= 3600) return (seconds / 3600) + "h"; if (seconds >= 60) return (seconds / 60) + "m"; return Math.max(0, seconds) + "s"; }
     private String format(double value) { return String.format(Locale.US, value == Math.rint(value) ? "%.0f" : "%.2f", value); }
     private String name(UUID uuid) { String name = Bukkit.getOfflinePlayer(uuid).getName(); return name == null ? uuid.toString() : name; }
-    private void msg(CommandSender sender, String raw) { sender.sendMessage(color(getConfig().getString("messages.prefix", "&5[MiraBoosters]&r ") + raw)); }
+    private void msg(CommandSender sender, String raw) { sender.sendMessage(color(getConfig().getString("messages.prefix", "&5&lMira &8>> &r") + raw)); }
     private String color(String raw) { return ChatColor.translateAlternateColorCodes('&', raw == null ? "" : raw); }
     private static List<String> match(String prefix, Collection<String> values) { String lower = prefix.toLowerCase(Locale.ROOT); return values.stream().filter(v -> v.toLowerCase(Locale.ROOT).startsWith(lower)).sorted().toList(); }
 

@@ -1,0 +1,19 @@
+name: MiraBoosters
+version: 0.1.0
+main: com.mira.boosters.MiraBoostersPlugin
+api-version: '1.21'
+authors: [FiveS]
+description: Timed global and personal multipliers for the Mira plugin ecosystem.
+softdepend: [PlaceholderAPI, MiraCore, MiraShop, MiraCrates, MiraSpawners]
+
+commands:
+  booster:
+    description: View and administer MiraBoosters.
+    usage: /booster <list|give|global|clear>
+    aliases: [boosters]
+
+permissions:
+  miraboosters.use:
+    default: true
+  miraboosters.admin:
+    default: op
