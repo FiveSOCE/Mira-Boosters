@@ -1,0 +1,5 @@
+stack-mode: MULTIPLY
+max-effective-multiplier: 10.0
+broadcast-global: true
+messages:
+  prefix: "&5[MiraBoosters]&r "
