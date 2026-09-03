@@ -173,7 +173,7 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
             double multiplier = number(args[2], -1);
             long seconds = duration(args[3]);
             if (!activateGlobal(args[1], multiplier, seconds)) { msg(sender, "&cInvalid booster values."); return true; }
-            if (getConfig().getBoolean("broadcast-global", true)) Bukkit.broadcastMessage(color("&6&lBOOSTER &eGlobal &f" + channel(args[1]) + " &ebooster activated at &ax" + format(multiplier) + " &efor &f" + formatDuration(seconds) + "&e!"));
+            if (getConfig().getBoolean("broadcast-global", true)) Bukkit.broadcastMessage(color(getConfig().getString("messages.prefix", "&5&lMira &8>> &r") + "&6&lBOOSTER &eGlobal &f" + channel(args[1]) + " &ebooster activated at &ax" + format(multiplier) + " &efor &f" + formatDuration(seconds) + "&e!"));
             else msg(sender, "&aGlobal booster activated.");
             return true;
         }
