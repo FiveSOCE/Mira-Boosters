@@ -4,7 +4,8 @@ main: com.mira.boosters.MiraBoostersPlugin
 api-version: '1.21'
 authors: [FiveS]
 description: Timed global and personal multipliers for the Mira plugin ecosystem.
-softdepend: [PlaceholderAPI, MiraCore, MiraShop, MiraCrates, MiraSpawners]
+depend: [MiraCore]
+softdepend: [PlaceholderAPI, MiraShop, MiraCrates, MiraSpawners]
 
 commands:
   booster:
