@@ -67,11 +67,10 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
     @Override
     public double multiplier(String channel, UUID player) {
         String key = channel(channel);
-        List<Double> values = boosters.values().stream()
+        List<Booster> values = boosters.values().stream()
                 .filter(this::active)
-                .filter(b -> b.channel().equals(key))
-                .filter(b -> b.owner() == null || Objects.equals(b.owner(), player))
-                .map(Booster::multiplier)
+                .filter(booster -> booster.channel().equals(key))
+                .filter(booster -> booster.owner() == null || Objects.equals(booster.owner(), player))
                 .toList();
         return combine(values);
     }
@@ -79,51 +78,99 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
     @Override
     public double globalMultiplier(String channel) {
         String key = channel(channel);
-        return combine(boosters.values().stream().filter(this::active).filter(b -> b.owner() == null && b.channel().equals(key)).map(Booster::multiplier).toList());
+        return combine(boosters.values().stream()
+                .filter(this::active)
+                .filter(booster -> booster.owner() == null && booster.channel().equals(key))
+                .toList());
     }
 
     @Override
     public boolean activateGlobal(String channel, double multiplier, long durationSeconds) {
-        return activate(null, channel, multiplier, durationSeconds);
+        return activateGlobal(channel, multiplier, durationSeconds, defaultMode().name());
+    }
+
+    @Override
+    public boolean activateGlobal(String channel, double multiplier, long durationSeconds, String stackingMode) {
+        return activate(null, channel, multiplier, durationSeconds, mode(stackingMode));
     }
 
     @Override
     public boolean activatePersonal(UUID player, String channel, double multiplier, long durationSeconds) {
+        return activatePersonal(player, channel, multiplier, durationSeconds, defaultMode().name());
+    }
+
+    @Override
+    public boolean activatePersonal(UUID player, String channel, double multiplier, long durationSeconds, String stackingMode) {
         if (player == null) return false;
-        return activate(player, channel, multiplier, durationSeconds);
+        return activate(player, channel, multiplier, durationSeconds, mode(stackingMode));
+    }
+
+    @Override
+    public int clearGlobal(String rawChannel) {
+        String wanted = channel(rawChannel);
+        int before = boosters.size();
+        boosters.values().removeIf(booster -> booster.owner() == null
+                && (wanted.isBlank() || booster.channel().equals(wanted)));
+        int removed = before - boosters.size();
+        if (removed > 0) saveData();
+        return removed;
+    }
+
+    @Override
+    public int clearPersonal(UUID player, String rawChannel) {
+        if (player == null) return 0;
+        String wanted = channel(rawChannel);
+        int before = boosters.size();
+        boosters.values().removeIf(booster -> Objects.equals(booster.owner(), player)
+                && (wanted.isBlank() || booster.channel().equals(wanted)));
+        int removed = before - boosters.size();
+        if (removed > 0) saveData();
+        return removed;
     }
 
     @Override
     public Set<String> activeChannels(UUID player) {
         Set<String> out = new TreeSet<>();
-        for (Booster booster : boosters.values()) if (active(booster) && (booster.owner() == null || Objects.equals(booster.owner(), player))) out.add(booster.channel());
+        for (Booster booster : boosters.values()) {
+            if (active(booster) && (booster.owner() == null || Objects.equals(booster.owner(), player))) {
+                out.add(booster.channel());
+            }
+        }
         return Collections.unmodifiableSet(out);
     }
 
-    private boolean activate(UUID owner, String rawChannel, double multiplier, long durationSeconds) {
+    private boolean activate(UUID owner, String rawChannel, double multiplier, long durationSeconds, StackMode stackMode) {
         String channel = channel(rawChannel);
-        if (channel.isBlank() || !Double.isFinite(multiplier) || multiplier <= 0 || durationSeconds <= 0) return false;
+        if (channel.isBlank() || !Double.isFinite(multiplier) || multiplier <= 0 || durationSeconds <= 0 || stackMode == null) return false;
         double cap = Math.max(1.0, getConfig().getDouble("max-effective-multiplier", 10.0));
         if (multiplier > cap) return false;
         long expires = System.currentTimeMillis() + durationSeconds * 1000L;
-        Booster booster = new Booster(UUID.randomUUID(), channel, multiplier, expires, owner);
+        Booster booster = new Booster(UUID.randomUUID(), channel, multiplier, expires, owner, stackMode);
         boosters.put(booster.id(), booster);
         saveData();
+        core.audit().record("MiraBoosters", owner == null ? "GLOBAL_BOOSTER_ACTIVATED" : "PERSONAL_BOOSTER_ACTIVATED",
+                owner, owner == null ? "server" : name(owner), channel, "Activated booster",
+                Map.of("multiplier", Double.toString(multiplier), "durationSeconds", Long.toString(durationSeconds),
+                        "stackMode", stackMode.name()));
         return true;
     }
 
-    private double combine(Collection<Double> values) {
+    private double combine(Collection<Booster> values) {
         if (values.isEmpty()) return 1.0;
-        String mode = getConfig().getString("stack-mode", "MULTIPLY").toUpperCase(Locale.ROOT);
-        double result;
-        switch (mode) {
-            case "MAX" -> result = values.stream().mapToDouble(Double::doubleValue).max().orElse(1.0);
-            case "ADDITIVE", "ADD" -> result = 1.0 + values.stream().mapToDouble(v -> v - 1.0).sum();
-            default -> {
-                result = 1.0;
-                for (double value : values) result *= value;
+
+        double multiplied = 1.0;
+        double additiveBonus = 0.0;
+        double maxFloor = 1.0;
+
+        for (Booster booster : values) {
+            switch (booster.stackMode()) {
+                case MULTIPLY -> multiplied *= booster.multiplier();
+                case ADDITIVE -> additiveBonus += booster.multiplier() - 1.0;
+                case MAX -> maxFloor = Math.max(maxFloor, booster.multiplier());
             }
         }
+
+        double result = Math.max(maxFloor, multiplied * Math.max(0.0, 1.0 + additiveBonus));
         return Math.min(Math.max(0.0, result), Math.max(1.0, getConfig().getDouble("max-effective-multiplier", 10.0)));
     }
 
