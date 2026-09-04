@@ -1,6 +1,9 @@
 package com.mira.boosters;
 
 import com.mira.boosters.api.MiraBoostersApi;
+import com.mira.core.api.MiraCore;
+import com.mira.core.api.MiraCoreProvider;
+import com.mira.core.api.ModuleHealth;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -25,12 +28,14 @@ import java.util.*;
 
 public final class MiraBoostersPlugin extends JavaPlugin implements Listener, TabExecutor, MiraBoostersApi {
     private final Map<UUID, Booster> boosters = new LinkedHashMap<>();
+    private MiraCore core;
     private File dataFile;
     private YamlConfiguration data;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        core = MiraCoreProvider.require();
         dataFile = new File(getDataFolder(), "boosters.yml");
         data = YamlConfiguration.loadConfiguration(dataFile);
         loadData();
@@ -40,6 +45,10 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
         command.setTabCompleter(this);
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getServicesManager().register(MiraBoostersApi.class, this, this, ServicePriority.Normal);
+        core.modules().register(this, "MiraBoosters");
+        core.services().register(MiraBoostersApi.class, this);
+        core.modules().setHealth(this, ModuleHealth.HEALTHY,
+                "Global/personal multiplier channels and per-booster stacking ready");
         if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) new BoosterExpansion().register();
         Bukkit.getScheduler().runTaskTimer(this, this::cleanupExpired, 1200L, 1200L);
         getLogger().info("MiraBoosters v" + getPluginMeta().getVersion() + " enabled with " + boosters.size() + " active booster(s).");
@@ -49,6 +58,10 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
     public void onDisable() {
         saveData();
         getServer().getServicesManager().unregisterAll(this);
+        if (core != null) {
+            core.services().unregister(MiraBoostersApi.class, this);
+            core.modules().unregister(this);
+        }
     }
 
     @Override
