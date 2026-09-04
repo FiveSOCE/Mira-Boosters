@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -25,5 +29,18 @@ jobs:
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
         with:
-          name: MiraBoosters-0.1.0
-          path: build/libs/MiraBoosters-0.1.0.jar
+          name: MiraBoosters-0.1.1
+          path: build/libs/MiraBoosters-0.1.1.jar
+
+      - name: Publish v0.1.1 release if missing
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view v0.1.1 >/dev/null 2>&1; then
+            gh release create v0.1.1 \
+              build/libs/MiraBoosters-0.1.1.jar \
+              --target "${{ github.sha }}" \
+              --title "MiraBoosters v0.1.1" \
+              --notes "Moves MiraBoosters to MiraCore 0.2.0, makes MULTIPLY/MAX/ADDITIVE stacking real per booster, adds channel-specific clear controls and exposes the expanded service API."
+          fi
