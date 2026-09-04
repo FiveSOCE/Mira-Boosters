@@ -221,7 +221,7 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
                 if (!active(booster)) continue;
                 if (booster.owner() != null && !Objects.equals(booster.owner(), viewer) && !sender.hasPermission("miraboosters.admin")) continue;
                 String scope = booster.owner() == null ? "Global" : name(booster.owner());
-                msg(sender, "&7- &f" + booster.channel() + " &ax" + format(booster.multiplier()) + " &7" + scope + " &8(" + formatDuration((booster.expiresAt() - System.currentTimeMillis()) / 1000L) + ")");
+                msg(sender, "&7- &f" + booster.channel() + " &ax" + format(booster.multiplier()) + " &7" + scope + " &8[" + booster.stackMode().name() + "] (" + formatDuration((booster.expiresAt() - System.currentTimeMillis()) / 1000L) + ")");
                 shown++;
             }
             if (shown == 0) msg(sender, "&7None.");
@@ -229,34 +229,44 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
         }
         if (!sender.hasPermission("miraboosters.admin")) { msg(sender, "&cYou do not have permission."); return true; }
         if (args[0].equalsIgnoreCase("global")) {
-            if (args.length < 4) { msg(sender, "&eUsage: /booster global <channel> <multiplier> <duration>"); return true; }
+            if (args.length < 4) { msg(sender, "&eUsage: /booster global <channel> <multiplier> <duration> [multiply|max|additive]"); return true; }
             double multiplier = number(args[2], -1);
             long seconds = duration(args[3]);
-            if (!activateGlobal(args[1], multiplier, seconds)) { msg(sender, "&cInvalid booster values."); return true; }
-            if (getConfig().getBoolean("broadcast-global", true)) Bukkit.broadcastMessage(color(getConfig().getString("messages.prefix", "&5&lMira &8>> &r") + "&6&lBOOSTER &eGlobal &f" + channel(args[1]) + " &ebooster activated at &ax" + format(multiplier) + " &efor &f" + formatDuration(seconds) + "&e!"));
+            String stacking = args.length >= 5 ? args[4] : defaultMode().name();
+            if (!activateGlobal(args[1], multiplier, seconds, stacking)) { msg(sender, "&cInvalid booster values."); return true; }
+            if (getConfig().getBoolean("broadcast-global", true)) Bukkit.broadcastMessage(color(getConfig().getString("messages.prefix", "&5&lMira &8>> &r") + "&6&lBOOSTER &eGlobal &f" + channel(args[1]) + " &ebooster activated at &ax" + format(multiplier) + " &efor &f" + formatDuration(seconds) + " &8[" + mode(stacking).name() + "]&e!"));
             else msg(sender, "&aGlobal booster activated.");
             return true;
         }
         if (args[0].equalsIgnoreCase("give")) {
-            if (args.length < 5) { msg(sender, "&eUsage: /booster give <player> <channel> <multiplier> <duration>"); return true; }
+            if (args.length < 5) { msg(sender, "&eUsage: /booster give <player> <channel> <multiplier> <duration> [multiply|max|additive]"); return true; }
             OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
             double multiplier = number(args[3], -1);
             long seconds = duration(args[4]);
-            if (!activatePersonal(target.getUniqueId(), args[2], multiplier, seconds)) { msg(sender, "&cInvalid booster values."); return true; }
-            msg(sender, "&aActivated &f" + channel(args[2]) + " x" + format(multiplier) + " &afor &f" + name(target.getUniqueId()) + " &afor &f" + formatDuration(seconds) + "&a.");
+            String stacking = args.length >= 6 ? args[5] : defaultMode().name();
+            if (!activatePersonal(target.getUniqueId(), args[2], multiplier, seconds, stacking)) { msg(sender, "&cInvalid booster values."); return true; }
+            msg(sender, "&aActivated &f" + channel(args[2]) + " x" + format(multiplier) + " &afor &f" + name(target.getUniqueId()) + " &afor &f" + formatDuration(seconds) + " &8[" + mode(stacking).name() + "]&a.");
             return true;
         }
         if (args[0].equalsIgnoreCase("clear")) {
-            if (args.length < 2) { msg(sender, "&eUsage: /booster clear <all|global|player> [player]"); return true; }
-            int before = boosters.size();
-            if (args[1].equalsIgnoreCase("all")) boosters.clear();
-            else if (args[1].equalsIgnoreCase("global")) boosters.values().removeIf(b -> b.owner() == null);
-            else if (args[1].equalsIgnoreCase("player") && args.length >= 3) {
+            if (args.length < 2) { msg(sender, "&eUsage: /booster clear <all|global|player> [channel|player] [channel]"); return true; }
+            int removed;
+            if (args[1].equalsIgnoreCase("all")) {
+                removed = boosters.size();
+                boosters.clear();
+                if (removed > 0) saveData();
+            } else if (args[1].equalsIgnoreCase("global")) {
+                removed = clearGlobal(args.length >= 3 ? args[2] : "");
+            } else if (args[1].equalsIgnoreCase("player") && args.length >= 3) {
                 UUID uuid = Bukkit.getOfflinePlayer(args[2]).getUniqueId();
-                boosters.values().removeIf(b -> Objects.equals(b.owner(), uuid));
-            } else { msg(sender, "&cUnknown clear target."); return true; }
-            saveData();
-            msg(sender, "&aCleared &f" + (before - boosters.size()) + " &abooster(s).");
+                removed = clearPersonal(uuid, args.length >= 4 ? args[3] : "");
+            } else {
+                msg(sender, "&cUnknown clear target.");
+                return true;
+            }
+            core.audit().record("MiraBoosters", "BOOSTERS_CLEARED", sender instanceof Player p ? p.getUniqueId() : null,
+                    sender.getName(), args[1], "Cleared boosters", Map.of("count", Integer.toString(removed)));
+            msg(sender, "&aCleared &f" + removed + " &abooster(s).");
             return true;
         }
         msg(sender, "&eUsage: /booster <list|global|give|clear>");
@@ -272,8 +282,12 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("give")) return match(args[1], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
         if ((args.length == 2 && args[0].equalsIgnoreCase("global")) || (args.length == 3 && args[0].equalsIgnoreCase("give"))) return match(args[args.length - 1], List.of("xp", "mob_drops", "shop_sell", "crate_chance", "spawner_rate"));
+        if (args.length == 5 && args[0].equalsIgnoreCase("global")) return match(args[4], List.of("multiply", "max", "additive"));
+        if (args.length == 6 && args[0].equalsIgnoreCase("give")) return match(args[5], List.of("multiply", "max", "additive"));
         if (args.length == 2 && args[0].equalsIgnoreCase("clear")) return match(args[1], List.of("all", "global", "player"));
+        if (args.length == 3 && args[0].equalsIgnoreCase("clear") && args[1].equalsIgnoreCase("global")) return match(args[2], List.of("xp", "mob_drops", "shop_sell", "crate_chance", "spawner_rate"));
         if (args.length == 3 && args[0].equalsIgnoreCase("clear") && args[1].equalsIgnoreCase("player")) return match(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+        if (args.length == 4 && args[0].equalsIgnoreCase("clear") && args[1].equalsIgnoreCase("player")) return match(args[3], List.of("xp", "mob_drops", "shop_sell", "crate_chance", "spawner_rate"));
         return List.of();
     }
 
@@ -289,7 +303,8 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
                 long expires = root.getLong(idRaw + ".expires-at", 0L);
                 String ownerRaw = root.getString(idRaw + ".owner");
                 UUID owner = ownerRaw == null || ownerRaw.isBlank() ? null : UUID.fromString(ownerRaw);
-                if (!channel.isBlank() && multiplier > 0 && expires > 0) boosters.put(id, new Booster(id, channel, multiplier, expires, owner));
+                StackMode stackMode = mode(root.getString(idRaw + ".stack-mode", defaultMode().name()));
+                if (!channel.isBlank() && multiplier > 0 && expires > 0) boosters.put(id, new Booster(id, channel, multiplier, expires, owner, stackMode));
             } catch (Exception ignored) { }
         }
     }
@@ -303,11 +318,19 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
             data.set(path + ".multiplier", booster.multiplier());
             data.set(path + ".expires-at", booster.expiresAt());
             data.set(path + ".owner", booster.owner() == null ? null : booster.owner().toString());
+            data.set(path + ".stack-mode", booster.stackMode().name());
         }
         try { data.save(dataFile); } catch (IOException ex) { getLogger().severe("Could not save boosters.yml: " + ex.getMessage()); }
     }
 
     private String channel(String raw) { return raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT).replace('-', '_'); }
+    private StackMode defaultMode() { return mode(getConfig().getString("stack-mode", "MULTIPLY")); }
+    private StackMode mode(String raw) {
+        String value = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+        if (value.equals("ADD")) value = "ADDITIVE";
+        try { return StackMode.valueOf(value); }
+        catch (IllegalArgumentException ex) { return StackMode.MULTIPLY; }
+    }
     private double number(String raw, double fallback) { try { return Double.parseDouble(raw); } catch (Exception ex) { return fallback; } }
     private long duration(String raw) {
         if (raw == null || raw.isBlank()) return -1;
@@ -327,7 +350,8 @@ public final class MiraBoostersPlugin extends JavaPlugin implements Listener, Ta
     private String color(String raw) { return ChatColor.translateAlternateColorCodes('&', raw == null ? "" : raw); }
     private static List<String> match(String prefix, Collection<String> values) { String lower = prefix.toLowerCase(Locale.ROOT); return values.stream().filter(v -> v.toLowerCase(Locale.ROOT).startsWith(lower)).sorted().toList(); }
 
-    private record Booster(UUID id, String channel, double multiplier, long expiresAt, UUID owner) { }
+    private enum StackMode { MULTIPLY, MAX, ADDITIVE }
+    private record Booster(UUID id, String channel, double multiplier, long expiresAt, UUID owner, StackMode stackMode) { }
 
     private final class BoosterExpansion extends PlaceholderExpansion {
         @Override public String getIdentifier() { return "miraboosters"; }
